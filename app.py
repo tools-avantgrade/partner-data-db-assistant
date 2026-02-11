@@ -1,4 +1,4 @@
-python"""
+"""
 Partner Data AI Assistant
 Assistente AI per interrogare i dati del gestionale OS1
 """
