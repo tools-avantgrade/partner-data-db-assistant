@@ -102,9 +102,12 @@ class OS1Client:
         """Cerca cliente per codice, nome o ragione sociale."""
         # Prova prima per codice esatto
         if query.isdigit():
-            result = self._get(f"/erp/cliente/{query}")
-            if result:
-                return result if isinstance(result, list) else [result]
+            try:
+                result = self._get(f"/erp/cliente/{query}")
+                if result:
+                    return result if isinstance(result, list) else [result]
+            except Exception as e:
+                logger.warning(f"Ricerca diretta per codice '{query}' fallita: {e}, provo ricerca generica")
 
         # Ricerca generica su lista clienti
         clienti = self._get("/erp/cliente")
@@ -122,7 +125,11 @@ class OS1Client:
 
     def get_cliente(self, id_cliente):
         """Dettaglio singolo cliente per codice."""
-        return self._get(f"/erp/cliente/{id_cliente}")
+        try:
+            return self._get(f"/erp/cliente/{id_cliente}")
+        except Exception as e:
+            logger.warning(f"Dettaglio cliente '{id_cliente}' fallito: {e}")
+            return {"error": f"Cliente con codice '{id_cliente}' non trovato o errore API: {str(e)}"}
 
     def lista_clienti(self, limit=50):
         """Lista clienti (primi N)."""
