@@ -35,6 +35,7 @@ COME COMPORTARTI:
 - Formatta le date in formato italiano (gg/mm/aaaa)
 - Se i dati non bastano per rispondere, chiedi chiarimenti
 - Se un tool non restituisce risultati, dillo chiaramente
+- Se un tool restituisce un errore di connessione o autenticazione, NON inventare dati: spiega solo che il gestionale non è raggiungibile
 - Puoi fare più chiamate API in sequenza se necessario (es: prima cerca cliente, poi prendi le fatture)
 
 STATI DEI DOCUMENTI:
@@ -45,8 +46,6 @@ STATI DEI DOCUMENTI:
 CATEGORIE PRODOTTO (da arricchire con file Excel di Francesco):
 - Gruppi vendita (macro): reparto card, reparto animali, reparto smart card, hardware, lettori
 - Categorie merceologiche (dettaglio): tessera combo, tessera contatto, tessera RFID, ecc.
-
-CLIENTE DI TEST: codice 444 = MS., storico dal 2015 ad oggi.
 
 Oggi è il {today}.
 """.format(today=datetime.now().strftime("%d/%m/%Y"))
@@ -280,6 +279,18 @@ def execute_tool(os1_client, tool_name, tool_input):
         return json.dumps({"error": f"Errore durante {tool_name}: {str(e)}"})
 
 
+def normalize_assistant_text(text):
+    """Normalizza eventuali newline escaped (\\n) prodotti dal modello."""
+    if not isinstance(text, str):
+        return ""
+
+    normalized = text.strip()
+    # Converte solo in presenza di sequenze escaped, evitando doppie trasformazioni.
+    if "\\n" in normalized:
+        normalized = normalized.replace("\\n", "\n")
+    return normalized
+
+
 # ──────────────────────────────────────────────
 # CHAT CON CLAUDE + FUNCTION CALLING LOOP
 # ──────────────────────────────────────────────
@@ -311,10 +322,22 @@ def chat_with_claude(client, os1_client, messages):
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                # Mostra nell'interfaccia quale API sta chiamando
-                st.caption(f"🔍 Chiamo `{block.name}` con parametri: {json.dumps(block.input, ensure_ascii=False)}")
-
                 result = execute_tool(os1_client, block.name, block.input)
+
+                # Se il gestionale non è raggiungibile, evita passaggi inutili al modello
+                try:
+                    parsed = json.loads(result)
+                    if isinstance(parsed, dict) and parsed.get("error"):
+                        error_text = parsed["error"].lower()
+                        if "connessione" in error_text or "vpn" in error_text:
+                            return (
+                                "Al momento non riesco a connettermi al gestionale OS1. "
+                                "Verifica che la VPN OpenVPN sia attiva e che il server OS1 sia raggiungibile, "
+                                "poi riprova la richiesta."
+                            )
+                except (TypeError, json.JSONDecodeError):
+                    pass
+
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -340,6 +363,7 @@ def chat_with_claude(client, os1_client, messages):
             text_parts.append(block.text)
 
     final_text = "\n".join(text_parts) if text_parts else "Non sono riuscito a elaborare una risposta."
+    final_text = normalize_assistant_text(final_text)
 
     # Aggiungi risposta finale alla conversazione
     messages.append({"role": "assistant", "content": response.content})
